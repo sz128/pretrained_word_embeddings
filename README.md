@@ -16,3 +16,15 @@ It is about how to load pretrained word embeddings in pytorch, e.g., ELMo\BERT\X
 Usually, we want to get word embeddings from BERT\XLNET models, while one word may be split into multiple tokens after BERT\XLNET tokenization. In this case, we would like to get word embeddings by using the alignment from BERT\XLNET tokens to original words.
 
 For example, the sentence "i dont care wether it provides free wifi or not" can be tokenized as "\['i', 'dont', 'care', 'wet', '##her', 'it', 'provides', 'free', 'wi', '##fi', 'or', 'not'\]".
+
+We provide two types of alignment:
+  * 'first': using the embedding of the first token of each word as the word embedding.
+  * 'avg': averaging the embeddings of all the tokens of each word as the word embedding
+
+### alignment is 'first'
+
+ <img src="./figs/alignment_from_bert_xlnet_tokens_to_words_first.png" width="750" alt="alignment is first"/>
+
+### alignment is 'avg'
+
+ <img src="./figs/alignment_from_bert_xlnet_tokens_to_words_avg.png" width="750" alt="alignment is avg"/>
