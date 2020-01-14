@@ -42,7 +42,7 @@ class PretrainedInputEmbeddings(nn.Module):
                     'pad_on_left': bool(self.pretrained_model_info['type'] in ['xlnet']), # pad on the left for xlnet
                     'pad_token_segment_id': 4 if self.pretrained_model_info['type'] in ['xlnet'] else 0,
                     }
-            if 'alignment' not in self.pretrained_model_info or self.pretrained_model_info['alignment'] not in {'first', 'avg'}:
+            if 'alignment' not in self.pretrained_model_info or self.pretrained_model_info['alignment'] not in {'first', 'avg', 'ori'}:
                 self.alignment = None
             else:
                 self.alignment = self.pretrained_model_info['alignment']
@@ -57,22 +57,27 @@ class PretrainedInputEmbeddings(nn.Module):
         """
         words: a list of word list
         """
+        """
+        [NOTE]: If you want to feed output word embeddings into RNN/GRU/LSTM by using pack_padded_sequence, you'd better sort 'words' by length in advance.
+        """
         if self.pretrained_model_type == 'tf':
-            input_tf = prepare_inputs_for_bert_xlnet(words, self.tf_tokenizer, device=self.device, **self.tf_input_args, alignment=self.alignment)
+            input_tf, tf_tokens, output_tokens, output_token_lengths = prepare_inputs_for_bert_xlnet(words, self.tf_tokenizer, device=self.device, **self.tf_input_args, alignment=self.alignment)
             embeds = transformer_forward_by_ignoring_suffix(self.tf_model, **input_tf, device=self.device, alignment=self.alignment)
         else:
             tokens = batch_to_ids(words).to(self.device)
             elmo_embeds = self.elmo_model(tokens)
             embeds = elmo_embeds['elmo_representations'][0]
+            output_tokens = words
+            output_token_lengths = [len(ws) for ws in words]
         
         if not no_dropout:
             embeds = self.dropout_layer(embeds)
 
-        return embeds
+        return embeds, output_tokens, output_token_lengths
 
 
 if __name__ == "__main__":
-    bert_model_0 = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': None}, dropout=0.0, device=None)
+    bert_model_ori = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'ori'}, dropout=0.0, device=None)
     bert_model_first = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'first'}, dropout=0.0, device=None)
     bert_model_avg = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'avg'}, dropout=0.0, device=None)
     elmo_model = PretrainedInputEmbeddings(pretrained_model_type='elmo', pretrained_model_info={'elmo_json': 'https://allennlp.s3.amazonaws.com/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json', 'elmo_weight': 'https://allennlp.s3.amazonaws.com/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5'}, dropout=0.0, device=None)
@@ -80,7 +85,7 @@ if __name__ == "__main__":
     sentences = ['hello world', 'may i help you ?', 'i dont care', 'wifi']
     words = [s.split(' ') for s in sentences]
     
-    print(bert_model_0(words))
+    print(bert_model_ori(words))
     print(bert_model_first(words))
     print(bert_model_avg(words))
     print(elmo_model(words))

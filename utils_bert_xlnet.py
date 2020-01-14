@@ -56,9 +56,12 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
     if alignment == 'first':
         selected_indexes = []
     elif alignment == 'avg':
-        remove_cls_seq_indexes = [] # for aggregation; first, remove cls and seq
+        remove_cls_seq_gather_indexes = [] # for aggregation; first, remove cls and seq
         aggregated_indexes = [] # for aggregation; after removing cls and seq
         aggregated_counts = [] # for aggregation; after removing cls and seq
+    elif alignment == 'ori':
+        remove_cls_seq_gather_indexes = [] # remove cls and seq
+    output_tokens = []
     start_pos = 0
     for snt_idx, words in enumerate(input_sentences):
         if bos_eos:
@@ -69,26 +72,29 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
         elif alignment == 'avg':
             aggregated_index = []
             aggregated_count = []
-        ts = []
+        ts_1 = []
         for w_idx, w in enumerate(words):
             _toks = tokenizer.tokenize(w)
             if alignment == 'first':
                 if cls_token_at_end:
-                    selected_index.append(len(ts))
+                    selected_index.append(len(ts_1))
                 else:
-                    selected_index.append(len(ts) + 1)
+                    selected_index.append(len(ts_1) + 1)
             elif alignment == 'avg':
                 aggregated_index += [w_idx] * len(_toks)
                 aggregated_count.append(len(_toks))
-            ts += _toks
-        ts += [sep_token]
-        si = [sequence_a_segment_id] * len(ts)
+            ts_1 += _toks
+        if alignment in {'first', 'avg'}:
+            output_tokens.append(words)
+        elif alignment == 'ori':
+            output_tokens.append(ts_1)
+        si = [sequence_a_segment_id] * len(ts_1)
         if cls_token_at_end:
-            ts = ts + [cls_token]
-            si = si + [cls_token_segment_id]
+            ts = ts_1 + [sep_token, cls_token]
+            si = si + [sequence_a_segment_id, cls_token_segment_id]
         else:
-            ts = [cls_token] + ts
-            si = [cls_token_segment_id] + si
+            ts = [cls_token] + ts_1 + [sep_token]
+            si = [cls_token_segment_id] + si + [sequence_a_segment_id]
         tokens.append(ts)
         #print(ts)
         segment_ids.append(si)
@@ -96,14 +102,20 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
             selected_indexes.append(selected_index)
         elif alignment == 'avg':
             if cls_token_at_end:
-                remove_cls_seq_indexes.append(list(range(len(ts) - 2))) # ..... [SEP] [CLS]
+                remove_cls_seq_gather_indexes.append(list(range(len(ts) - 2))) # ..... [SEP] [CLS]
             else:
-                remove_cls_seq_indexes.append([i + 1 for i in range(len(ts) - 2)]) # [CLS] ..... [SEP]
+                remove_cls_seq_gather_indexes.append([i + 1 for i in range(len(ts) - 2)]) # [CLS] ..... [SEP]
             aggregated_indexes.append(aggregated_index)
             aggregated_counts.append(aggregated_count)
+        elif alignment == 'ori':
+            if cls_token_at_end:
+                remove_cls_seq_gather_indexes.append(list(range(len(ts) - 2))) # ..... [SEP] [CLS]
+            else:
+                remove_cls_seq_gather_indexes.append([i + 1 for i in range(len(ts) - 2)]) # [CLS] ..... [SEP]
     
     max_length_of_sentences = max(word_lengths) # the length is already +2 when bos_eos is True.
-    max_length_of_tokens = max([len(tokenized_text) for tokenized_text in tokens])
+    token_lengths = [len(tokenized_text) for tokenized_text in tokens]
+    max_length_of_tokens = max(token_lengths)
     #if not cls_token_at_end: # bert
     #    assert max_length_of_tokens <= model_bert.config.max_position_embeddings
     padding_lengths = [max_length_of_tokens - len(tokenized_text) for tokenized_text in tokens]
@@ -111,21 +123,23 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
         input_mask = [[0] * padding_lengths[idx] + [1] * len(tokenized_text) for idx,tokenized_text in enumerate(tokens)]
         indexed_tokens = [[pad_token] * padding_lengths[idx] + tokenizer.convert_tokens_to_ids(tokenized_text) for idx,tokenized_text in enumerate(tokens)]
         segments_ids = [[pad_token_segment_id] * padding_lengths[idx] + si for idx,si in enumerate(segment_ids)]
+        ## word embeddings will always pad on the right size!
         if alignment == 'first':
-            gather_indexes = [[0] * (max_length_of_sentences - word_lengths[idx]) + [padding_lengths[idx] + i for i in selected_index] for idx,selected_index in enumerate(selected_indexes)]
-        elif alignment == 'avg':
-            remove_cls_seq_indexes = [[0] * padding_lengths[idx] + [padding_lengths[idx] + i for i in remove_cls_seq_index] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_indexes)]
-            aggregated_indexes = [[aggregated_index[0]] * padding_lengths[idx] + aggregated_index for idx,aggregated_index in enumerate(aggregated_indexes)]
+            #gather_indexes = [[0] * (max_length_of_sentences - word_lengths[idx]) + [padding_lengths[idx] + i for i in selected_index] for idx,selected_index in enumerate(selected_indexes)]
+            gather_indexes = [[padding_lengths[idx] + i for i in selected_index] + [0] * (max_length_of_sentences - word_lengths[idx]) for idx,selected_index in enumerate(selected_indexes)]
+        elif alignment in {'ori', 'avg'}:
+            #remove_cls_seq_gather_indexes = [[0] * padding_lengths[idx] + [padding_lengths[idx] + i for i in remove_cls_seq_index] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_gather_indexes)]
+            remove_cls_seq_gather_indexes = [[padding_lengths[idx] + i for i in remove_cls_seq_index] + [0] * padding_lengths[idx] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_gather_indexes)]
     else:
         input_mask = [[1] * len(tokenized_text) + [0] * padding_lengths[idx] for idx,tokenized_text in enumerate(tokens)]
         indexed_tokens = [tokenizer.convert_tokens_to_ids(tokenized_text) + [pad_token] * padding_lengths[idx] for idx,tokenized_text in enumerate(tokens)]
         segments_ids = [si + [pad_token_segment_id] * padding_lengths[idx] for idx,si in enumerate(segment_ids)]
         if alignment == 'first':
             gather_indexes = [selected_index + [max_length_of_tokens - 1] * (max_length_of_sentences - word_lengths[idx]) for idx,selected_index in enumerate(selected_indexes)]
-        elif alignment == 'avg':
-            remove_cls_seq_indexes = [remove_cls_seq_index + [max_length_of_tokens - 1] * padding_lengths[idx] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_indexes)]
-            aggregated_indexes = [aggregated_index + [aggregated_index[-1]] * padding_lengths[idx] for idx,aggregated_index in enumerate(aggregated_indexes)]
+        elif alignment in {'ori', 'avg'}:
+            remove_cls_seq_gather_indexes = [remove_cls_seq_index + [max_length_of_tokens - 1] * padding_lengths[idx] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_gather_indexes)]
     if alignment == 'avg':
+        aggregated_indexes = [aggregated_index + [aggregated_index[-1]] * padding_lengths[idx] for idx,aggregated_index in enumerate(aggregated_indexes)]
         aggregated_counts = [aggregated_count + [1] * (max_length_of_sentences - word_lengths[idx]) for idx,aggregated_count in enumerate(aggregated_counts)]
 
     input_mask = torch.tensor(input_mask, dtype=torch.float, device=device)
@@ -140,22 +154,27 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
         gather_indexes = torch.tensor(gather_indexes, dtype=torch.long, device=device)
         output["gather_index"] = gather_indexes
     elif alignment == 'avg':
-        remove_cls_seq_indexes = torch.tensor(remove_cls_seq_indexes, dtype=torch.long, device=device)
+        remove_cls_seq_gather_indexes = torch.tensor(remove_cls_seq_gather_indexes, dtype=torch.long, device=device)
         aggregated_indexes = torch.tensor(aggregated_indexes, dtype=torch.long, device=device)
         aggregated_counts = torch.tensor(aggregated_counts, dtype=torch.float, device=device)
-        output["remove_cls_seq_index"] = remove_cls_seq_indexes
+        output["remove_cls_seq_gather_index"] = remove_cls_seq_gather_indexes
         output["aggregated_index"] = aggregated_indexes
         output["aggregated_count"] = aggregated_counts
         output["max_word_seq_length"] = max_length_of_sentences
+    elif alignment == 'ori':
+        remove_cls_seq_gather_indexes = torch.tensor(remove_cls_seq_gather_indexes, dtype=torch.long, device=device)
+        output["remove_cls_seq_gather_index"] = remove_cls_seq_gather_indexes
 
-    return output
+    return output, tokens, output_tokens, [len(seq) for seq in output_tokens]
 
-def transformer_forward_by_ignoring_suffix(transformer, input_ids, segment_ids, attention_mask, gather_index=None, remove_cls_seq_index=None, aggregated_index=None, aggregated_count=None, max_word_seq_length=None, device=None, alignment='first'):
+def transformer_forward_by_ignoring_suffix(transformer, input_ids, segment_ids, attention_mask, gather_index=None, remove_cls_seq_gather_index=None, aggregated_index=None, aggregated_count=None, max_word_seq_length=None, device=None, alignment='first'):
     '''
-    Ignore hidden states of all suffixes: [CLS] from ... to de ##n ##ver [SEP] => from ... to de
+    ['first', 'avg']: Ignore hidden states of all suffixes: [CLS] from ... to de ##n ##ver [SEP] => from ... to de
+    ['ori']: Ignore hidden states of [CLS] and [SEP]: [CLS] from ... to de ##n ##ver [SEP] => from ... to de ##n ##ver
+    !!! and padding on the right side !!!
     '''
     
-    #assert alignment in {'first', 'avg', None}
+    #assert alignment in {'ori', 'first', 'avg', None}
     
     outputs = transformer(input_ids, token_type_ids=segment_ids, attention_mask=attention_mask)
     pretrained_top_hiddens = outputs[0]
@@ -166,11 +185,14 @@ def transformer_forward_by_ignoring_suffix(transformer, input_ids, segment_ids, 
     if alignment == 'first':
         embeds = torch.gather(pretrained_top_hiddens, 1, gather_index[:, :, None].expand(-1, -1, hidden_size)) # expand does not allocate new memory
     elif alignment == 'avg':
-        pretrained_top_hiddens_without_cls_seq = torch.gather(pretrained_top_hiddens, 1, remove_cls_seq_index[:, :, None].expand(-1, -1, hidden_size))
+        pretrained_top_hiddens_without_cls_seq = torch.gather(pretrained_top_hiddens, 1, remove_cls_seq_gather_index[:, :, None].expand(-1, -1, hidden_size))
 
         aggregated_embeds = torch.zeros(batch_size, max_word_seq_length, hidden_size, device=device)
         aggregated_embeds.scatter_add_(1, aggregated_index[:, :, None].expand(-1, -1, hidden_size), pretrained_top_hiddens_without_cls_seq)
         embeds = aggregated_embeds / aggregated_count[:, :, None]
+    elif alignment == 'ori':
+        pretrained_top_hiddens_without_cls_seq = torch.gather(pretrained_top_hiddens, 1, remove_cls_seq_gather_index[:, :, None].expand(-1, -1, hidden_size))
+        embeds = pretrained_top_hiddens_without_cls_seq
     else:
         embeds = pretrained_top_hiddens
     #print(embeds[-1])
