@@ -19,7 +19,8 @@ For example, the sentence "i dont care wether it provides free wifi or not" can 
 
 We provide two types of alignment:
   * 'first': using the embedding of the first token of each word as the word embedding.
-  * 'avg': averaging the embeddings of all the tokens of each word as the word embedding
+  * 'avg': averaging the embeddings of all the tokens of each word as the word embedding.
+  * Otherwise, we simply use the output embeddings of BERT\XLNET to represent each input sentence.
 
 ### 1. alignment is 'first'
 
