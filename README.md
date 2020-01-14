@@ -21,10 +21,10 @@ We provide two types of alignment:
   * 'first': using the embedding of the first token of each word as the word embedding.
   * 'avg': averaging the embeddings of all the tokens of each word as the word embedding
 
-### alignment is 'first'
+### 1. alignment is 'first'
 
  <img src="./figs/alignment_from_bert_xlnet_tokens_to_words_first.png" width="750" alt="alignment is first"/>
 
-### alignment is 'avg'
+### 2. alignment is 'avg'
 
  <img src="./figs/alignment_from_bert_xlnet_tokens_to_words_avg.png" width="750" alt="alignment is avg"/>
