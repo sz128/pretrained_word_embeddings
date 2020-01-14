@@ -29,7 +29,7 @@ can be tokenized as
 .
 
 We provide three types of alignment:
-  * 'ori': we simply use the output embeddings of BERT\XLNET to represent each input sentence, while ignore the output embeddings of special tokens like '\[CLS\]' and '\[SEP\]'.
+  * 'ori': we simply use the output embeddings of BERT\XLNET to represent each input sentence, while ignoring the output embeddings of special tokens like '\[CLS\]' and '\[SEP\]'.
   * 'first': using the embedding of the first token of each word as the word embedding.
   * 'avg': averaging the embeddings of all the tokens of each word as the word embedding.
   
