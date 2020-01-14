@@ -17,7 +17,7 @@ class PretrainedInputEmbeddings(nn.Module):
     1) pretrained_model_type == 'tf', pretrained_model_info = {'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'first'}
         1.1): bert, bert-base-uncased, bert-base-cased, bert-base-chinese
         1.2): xlnet, xlnet-base-cased
-        1.3): alignemnt can be 'first' and 'avg'
+        1.3): alignemnt can be None, 'first' and 'avg'
     2) pretrained_model_type == 'elmo', pretrained_model_info = {'elmo_json': '', 'elmo_weight': ''}
     """
     def __init__(self, pretrained_model_type='tf', pretrained_model_info={}, dropout=0.0, device=None):
@@ -42,7 +42,10 @@ class PretrainedInputEmbeddings(nn.Module):
                     'pad_on_left': bool(self.pretrained_model_info['type'] in ['xlnet']), # pad on the left for xlnet
                     'pad_token_segment_id': 4 if self.pretrained_model_info['type'] in ['xlnet'] else 0,
                     }
-            self.alignment = self.pretrained_model_info['alignment']
+            if 'alignment' not in self.pretrained_model_info or self.pretrained_model_info['alignment'] not in {'first', 'avg'}:
+                self.alignment = None
+            else:
+                self.alignment = self.pretrained_model_info['alignment']
             self.embedding_dim = self.tf_model.config.hidden_size
         else:
             self.elmo_model = Elmo(pretrained_model_info['elmo_json'], pretrained_model_info['elmo_weight'], 1, dropout=0)
@@ -55,18 +58,7 @@ class PretrainedInputEmbeddings(nn.Module):
         words: a list of word list
         """
         if self.pretrained_model_type == 'tf':
-            lengths = [len(ws) for ws in words]
-            input_tf_ids, tf_segment_ids, tf_attention_mask, tf_output_gather_index, remove_cls_seq_index, aggregated_index, aggregated_count = prepare_inputs_for_bert_xlnet(words, self.tf_tokenizer, device=self.device, **self.tf_input_args)
-            input_tf = {
-                "input_ids": input_tf_ids,
-                "segment_ids": tf_segment_ids,
-                "attention_mask": tf_attention_mask,
-                "gather_index": tf_output_gather_index,
-                "remove_cls_seq_index": remove_cls_seq_index,
-                "aggregated_index": aggregated_index,
-                "aggregated_count": aggregated_count,
-                "max_word_seq_length": max(lengths)
-                }
+            input_tf = prepare_inputs_for_bert_xlnet(words, self.tf_tokenizer, device=self.device, **self.tf_input_args, alignment=self.alignment)
             embeds = transformer_forward_by_ignoring_suffix(self.tf_model, **input_tf, device=self.device, alignment=self.alignment)
         else:
             tokens = batch_to_ids(words).to(self.device)
@@ -80,6 +72,7 @@ class PretrainedInputEmbeddings(nn.Module):
 
 
 if __name__ == "__main__":
+    bert_model_0 = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': None}, dropout=0.0, device=None)
     bert_model_first = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'first'}, dropout=0.0, device=None)
     bert_model_avg = PretrainedInputEmbeddings(pretrained_model_type='tf', pretrained_model_info={'type': 'bert', 'name': 'bert-base-uncased', 'alignment': 'avg'}, dropout=0.0, device=None)
     elmo_model = PretrainedInputEmbeddings(pretrained_model_type='elmo', pretrained_model_info={'elmo_json': 'https://allennlp.s3.amazonaws.com/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_options.json', 'elmo_weight': 'https://allennlp.s3.amazonaws.com/models/elmo/2x4096_512_2048cnn_2xhighway/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5'}, dropout=0.0, device=None)
@@ -87,6 +80,7 @@ if __name__ == "__main__":
     sentences = ['hello world', 'may i help you ?', 'i dont care', 'wifi']
     words = [s.split(' ') for s in sentences]
     
+    print(bert_model_0(words))
     print(bert_model_first(words))
     print(bert_model_avg(words))
     print(elmo_model(words))
