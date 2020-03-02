@@ -139,6 +139,7 @@ def prepare_inputs_for_bert_xlnet(input_sentences, tokenizer, bos_eos=False, cls
         elif alignment in {'ori', 'avg'}:
             remove_cls_seq_gather_indexes = [remove_cls_seq_index + [max_length_of_tokens - 1] * padding_lengths[idx] for idx,remove_cls_seq_index in enumerate(remove_cls_seq_gather_indexes)]
     if alignment == 'avg':
+        ## output of hiddens should be masked to zero in positions of padding
         aggregated_indexes = [aggregated_index + [aggregated_index[-1]] * padding_lengths[idx] for idx,aggregated_index in enumerate(aggregated_indexes)]
         aggregated_counts = [aggregated_count + [1] * (max_length_of_sentences - word_lengths[idx]) for idx,aggregated_count in enumerate(aggregated_counts)]
 
